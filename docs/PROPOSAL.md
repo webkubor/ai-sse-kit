@@ -81,12 +81,12 @@ pollUntil<T>(
 
 ## 3. 渐进式 API：顶层封装 + 底层 primitive 两级
 
-这是本次对齐加的一层，之前的方案只有第 2 节的三个 primitive——对建自定义协议的人足够"好理解好组合"，
+这是对齐时加的一层，之前的方案只有第 2 节的三个 primitive——对建自定义协议的人足够"好理解好组合"，
 但对刚装完包的人不算"好上手"：他还得自己把三层串起来才能跑第一个例子。参照 React Query / tRPC 的分层
 思路，加一层默认封装，新手只看到它：
 
 ```ts
-// 顶层：一个 hook 包好默认路径（OpenAI 协议 + patchLastAssistant + abort）
+// 顶层：一个 hook/composable 包好默认路径（OpenAI 协议 + patchLastAssistant + abort）
 const { messages, send, stop, isStreaming } = useAIChat({
   url: '/api/chat',
   protocol: 'openai',        // 或传 parse 函数自定义
@@ -104,29 +104,49 @@ for await (const delta of createOpenAIStream({ url, body, signal: stream.begin()
 `useAIChat` 内部就是调用第 2 节的三层 primitive，不是另一套实现——文档结构对应两级：
 README 顶部只讲 `useAIChat`（5 行跑起来），底下单开一节「自定义协议 / 自己管状态」才展开 primitive。
 
+### 3.1 修正：不能只绑 React（多框架核心+薄绑定）
+
+开发过程中发现原方案把 `useAIChat`/`useStreamingController` 的**状态机逻辑直接写在 React hook 里**，
+这样 Vue 项目完全用不了顶层 API，只能退回底层 primitive 自己重新拼一遍——不符合"好上手"的目标。
+
+调整成三层：
+1. **`chat-store.ts`（框架无关）**：`createAIChatStore` —— 真正的引擎，`getState()/subscribe()/send()/stop()`，
+   纯 JS 闭包，不 import React 也不 import Vue
+2. **`react.ts`**：`useAIChat`/`useStreamingController` 薄绑定，靠 React 18 的 `useSyncExternalStore`
+   订阅 store（这个 API 就是为"外部 store 接进 React"设计的，Zustand 内部也这么用）
+3. **`vue.ts`**：同名 `useAIChat`/`useStreamingController` 薄绑定，靠 `onScopeDispose`（不是 `onUnmounted`——
+   后者只在真实组件里生效，`onScopeDispose` 在组件里、在裸 `effectScope()` 里都生效，VueUse 同款做法，
+   也是这层能脱离整个组件挂载单测的原因）+ `shallowRef`/`computed` 接进 Vue 的响应式
+
+send/stream/patch/abort 那段逻辑现在只存在一份（`chat-store.ts`），React/Vue 两个绑定加起来不到
+100 行，都是订阅/清理的胶水代码，不会出现"改了 React 版本忘改 Vue 版本"的分裂风险。
+
 ## 4. 包结构
 
-单包、无框架强依赖，React 部分用 subpath export 隔离：
+单包、核心无框架依赖，React/Vue 各自 subpath export 隔离：
 
 ```
 ai-sse-kit/
 ├── src/
-│   ├── transport.ts      # streamSSE, readSSE, isAbortError（框架无关）
-│   ├── react.ts          # useStreamingController + useAIChat（唯二的 React 依赖点）
-│   ├── adapters.ts       # createOpenAIStream, createCustomJSONStream
+│   ├── transport.ts      # streamSSE, readSSE, isAbortError, createStreamingController（框架无关）
+│   ├── adapters.ts       # createOpenAIStream, createAnthropicStream, createCustomJSONStream
 │   ├── apply.ts          # patchLastAssistant, patchMessageById
-│   └── poll.ts           # pollUntil
+│   ├── poll.ts           # pollUntil
+│   ├── chat-store.ts     # createAIChatStore —— useAIChat 的引擎，框架无关
+│   ├── react.ts          # useStreamingController + useAIChat 的 React 薄绑定
+│   └── vue.ts            # 同名的 Vue 薄绑定
 ├── package.json
 └── README.md
 ```
 
-`package.json` 的 `exports` 拆两个入口，`react.ts` 单独 subpath，非 React 项目（Vue/裸 JS）不会被迫装 React：
+`package.json` 的 `exports` 拆三个入口，装 React 的项目不会被迫装 Vue，反之亦然：
 
 ```json
 {
   "exports": {
-    ".": "./dist/index.js",        // transport + adapters + apply + poll
-    "./react": "./dist/react.js"   // useStreamingController + useAIChat，peerDependency react
+    ".": "./dist/index.js",        // transport + adapters + apply + poll + chat-store（框架无关部分）
+    "./react": "./dist/react.js",  // useStreamingController + useAIChat，peerDependency react
+    "./vue": "./dist/vue.js"       // 同名 API，peerDependency vue
   }
 }
 ```
