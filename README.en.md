@@ -2,6 +2,9 @@
 
 # ai-sse-kit
 
+[![license](https://img.shields.io/github/license/webkubor/ai-sse-kit)](./LICENSE)
+[![CI](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml)
+
 Progressive toolkit for AI streaming: SSE transport, protocol adapters
 (OpenAI / Anthropic / custom JSON), and stream-safe message patching. The core is
 framework-agnostic; React and Vue each get a thin binding on top.
@@ -61,6 +64,22 @@ for await (const delta of createOpenAIStream({ url, body, signal: stream.begin()
 
 Full architecture (three-layer design, progressive API, package structure) is in
 [`docs/PROPOSAL.md`](./docs/PROPOSAL.md).
+
+## API overview
+
+| Export | Entry point | What it does |
+|---|---|---|
+| `useAIChat` | `ai-sse-kit/react`, `ai-sse-kit/vue` | Top-level hook/composable: default protocol + message state + abort, batteries included |
+| `useStreamingController` | `ai-sse-kit/react`, `ai-sse-kit/vue` | Same, with framework lifecycle (auto cleanup on unmount/scope dispose) |
+| `createAIChatStore` | `ai-sse-kit` | The framework-agnostic engine behind `useAIChat` — use this to bind your own framework |
+| `createStreamingController` | `ai-sse-kit` | Keyed `AbortController` registry, no framework dependency |
+| `streamSSE` / `readSSE` | `ai-sse-kit` | SSE fetch + framing, protocol-agnostic |
+| `createOpenAIStream` | `ai-sse-kit` | OpenAI `chat.completion.chunk` protocol adapter |
+| `createAnthropicStream` | `ai-sse-kit` | Anthropic Messages API streaming protocol adapter |
+| `createCustomJSONStream` | `ai-sse-kit` | Configurable custom JSON-over-SSE protocol adapter |
+| `patchLastAssistant` / `patchMessageById` | `ai-sse-kit` | Immutable message-list patch helpers |
+| `pollUntil` | `ai-sse-kit` | Poll an async job to a terminal state (image/video generation, etc.) |
+| `isAbortError` / `extractHTTPError` | `ai-sse-kit` | Abort detection / structured HTTP error extraction |
 
 ## License
 

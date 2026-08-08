@@ -2,6 +2,9 @@
 
 # ai-sse-kit
 
+[![license](https://img.shields.io/github/license/webkubor/ai-sse-kit)](./LICENSE)
+[![CI](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml)
+
 渐进式的 AI 流式对话工具包：SSE 传输、协议适配器（OpenAI / Anthropic / 自定义 JSON）、
 流式消息不可变 patch。核心框架无关，React / Vue 各自提供薄绑定。
 
@@ -56,6 +59,22 @@ for await (const delta of createOpenAIStream({ url, body, signal: stream.begin()
 ```
 
 完整架构（三层设计、渐进式 API、包结构）见 [`docs/PROPOSAL.md`](./docs/PROPOSAL.md)。
+
+## API 一览
+
+| 导出 | 入口 | 作用 |
+|---|---|---|
+| `useAIChat` | `ai-sse-kit/react`、`ai-sse-kit/vue` | 顶层 hook/composable：默认协议+消息状态+abort 一次包好 |
+| `useStreamingController` | `ai-sse-kit/react`、`ai-sse-kit/vue` | 同名，framework 生命周期版（卸载/scope dispose 自动清理） |
+| `createAIChatStore` | `ai-sse-kit` | `useAIChat` 背后的框架无关引擎，自己接框架时用这个 |
+| `createStreamingController` | `ai-sse-kit` | keyed `AbortController` 注册表，无框架依赖版 |
+| `streamSSE` / `readSSE` | `ai-sse-kit` | SSE 拉流 + 分帧，协议无关 |
+| `createOpenAIStream` | `ai-sse-kit` | OpenAI `chat.completion.chunk` 协议适配器 |
+| `createAnthropicStream` | `ai-sse-kit` | Anthropic Messages API 流式协议适配器 |
+| `createCustomJSONStream` | `ai-sse-kit` | 自定义 JSON-over-SSE 协议适配器（字段名可配置） |
+| `patchLastAssistant` / `patchMessageById` | `ai-sse-kit` | 消息列表不可变 patch 工具 |
+| `pollUntil` | `ai-sse-kit` | 异步任务轮询到终态（图片/视频生成等非流式场景） |
+| `isAbortError` / `extractHTTPError` | `ai-sse-kit` | 错误判定 / HTTP 错误信息提取 |
 
 ## License
 

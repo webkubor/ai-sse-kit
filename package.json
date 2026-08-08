@@ -4,6 +4,7 @@
   "description": "Progressive toolkit for AI streaming: SSE transport, protocol adapters (OpenAI/Anthropic/custom), and stream-safe message patching. Framework-agnostic core with React and Vue bindings. Start with useAIChat(), drop to primitives when you need custom protocols.",
   "license": "MIT",
   "type": "module",
+  "packageManager": "pnpm@11.1.2",
   "author": "webkubor",
   "repository": {
     "type": "git",
