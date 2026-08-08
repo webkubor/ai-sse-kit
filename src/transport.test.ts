@@ -96,9 +96,47 @@ describe('extractHTTPError', () => {
     expect(err.message).toBe('deep')
   })
 
+  it('handles a bare string `error` field (common minimal-backend shape: { error: "..." })', async () => {
+    const err = await extractHTTPError(jsonErrorResponse(401, { error: '未登录或登录已过期' }))
+    expect(err.message).toBe('未登录或登录已过期')
+  })
+
+  it('still handles `error` as an object with .message', async () => {
+    const err = await extractHTTPError(jsonErrorResponse(500, { error: { message: 'boom' } }))
+    expect(err.message).toBe('boom')
+  })
+
   it('falls back to the HTTP status when the body is not JSON', async () => {
     const err = await extractHTTPError(new Response('not json', { status: 500 }))
     expect(err.message).toBe('HTTP 500')
+  })
+})
+
+describe('streamSSE credentials', () => {
+  it('does not force `include` by default — leaves it unset for fetch to apply its own default', async () => {
+    let captured: RequestInit | undefined
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      captured = init
+      return sseResponse(['data: [DONE]\n\n'])
+    }) as typeof fetch
+
+    for await (const _ of streamSSE({ url: '/x', body: {} })) {
+      // draining is enough
+    }
+    expect(captured?.credentials).toBeUndefined()
+  })
+
+  it('still honors an explicit credentials value', async () => {
+    let captured: RequestInit | undefined
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      captured = init
+      return sseResponse(['data: [DONE]\n\n'])
+    }) as typeof fetch
+
+    for await (const _ of streamSSE({ url: '/x', body: {}, credentials: 'include' })) {
+      // draining is enough
+    }
+    expect(captured?.credentials).toBe('include')
   })
 })
 

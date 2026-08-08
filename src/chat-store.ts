@@ -9,11 +9,15 @@
  */
 import { createAnthropicStream, createOpenAIStream, type AdapterOptions } from './adapters'
 import { patchLastAssistant } from './apply'
-import { createStreamingController, isAbortError } from './transport'
+import { createStreamingController, isAbortError, type SSEEvent } from './transport'
 
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
+  /** Reasoning/thinking text (deepseek-r1/v4, Anthropic extended thinking), if the
+   * protocol streams it separately from `content`. Absent when the protocol doesn't
+   * distinguish it — existing consumers that never look at this field see no change. */
+  reasoning?: string
   content: string
 }
 
@@ -29,6 +33,13 @@ export interface AIChatStoreOptions {
   /** Builds the request body from the full message history. Default: `{ messages }`. */
   buildBody?: (messages: ChatMessage[]) => unknown
   onError?: (err: Error) => void
+  /**
+   * Called for each raw SSE frame the protocol adapter doesn't itself interpret
+   * (content/reasoning/done/error) — e.g. an app-injected `event: card` frame mixed
+   * into an otherwise-standard stream. Passed straight through to the adapter's
+   * `onEvent`; see `AdapterOptions.onEvent` in `./adapters`.
+   */
+  onEvent?: (event: SSEEvent) => void
 }
 
 export interface AIChatState {
@@ -92,6 +103,10 @@ export function createAIChatStore(getOptions: () => AIChatStoreOptions): AIChatS
         headers: opts.headers,
         credentials: opts.credentials,
         signal,
+        onReasoning: (text) => {
+          setState({ messages: patchLastAssistant(state.messages, (m) => ({ reasoning: (m.reasoning ?? '') + text })) })
+        },
+        onEvent: opts.onEvent,
       })) {
         setState({ messages: patchLastAssistant(state.messages, (m) => ({ content: m.content + delta })) })
       }

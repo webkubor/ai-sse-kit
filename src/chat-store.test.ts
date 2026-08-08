@@ -120,6 +120,41 @@ describe('createAIChatStore', () => {
     expect(store.getState().isStreaming).toBe(false)
   })
 
+  it('accumulates reasoning_content into the assistant message`s `reasoning` field, separate from `content`', async () => {
+    mockFetchOnce(
+      sseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: 'thinking' } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'answer' } }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ]),
+    )
+    const store = createAIChatStore(() => ({ url: '/api/chat' }))
+
+    await store.send('hi')
+
+    const last = store.getState().messages.at(-1)
+    expect(last?.reasoning).toBe('thinking')
+    expect(last?.content).toBe('answer')
+  })
+
+  it('forwards side-channel events (e.g. a custom `card` frame) to onEvent', async () => {
+    mockFetchOnce(
+      sseResponse([
+        `event: card\ndata: ${JSON.stringify({ title: 'Ticket prices' })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'ok' } }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ]),
+    )
+    const onEvent = vi.fn()
+    const store = createAIChatStore(() => ({ url: '/api/chat', onEvent }))
+
+    await store.send('hi')
+
+    expect(onEvent).toHaveBeenCalledOnce()
+    expect(onEvent.mock.calls[0]?.[0]).toMatchObject({ event: 'card' })
+    expect(store.getState().messages.at(-1)?.content).toBe('ok')
+  })
+
   it('reads options fresh on every send (no stale closure)', async () => {
     let url = '/first'
     const store = createAIChatStore(() => ({ url }))

@@ -71,7 +71,8 @@
     "build": "tsup",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build",
+    "postpublish": "command -v cs >/dev/null 2>&1 && cs notify \"📦 ai-sse-kit v$npm_package_version 已发布 → https://www.npmjs.com/package/ai-sse-kit\" --project ai-sse-kit --level deployed || echo '（cs 不在这台机器上，跳过飞书通知，不影响发布结果）'"
   },
   "peerDependencies": {
     "react": ">=18",

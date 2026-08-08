@@ -70,6 +70,30 @@ for await (const delta of createOpenAIStream({ url, body, signal: stream.begin()
 Full architecture (three-layer design, progressive API, package structure) is in
 [`docs/PROPOSAL.md`](./docs/PROPOSAL.md).
 
+### Reasoning content / custom side-channel events
+
+Reasoning models (deepseek-r1/v4, Anthropic extended thinking) stream "thinking" and
+"final answer" separately. Backends sometimes also mix a custom event into an otherwise
+standard protocol stream (e.g. structured data you already queried and don't want the
+model to re-describe in prose). Neither pollutes the main delta stream — both go through
+dedicated callbacks:
+
+```ts
+for await (const delta of createOpenAIStream({
+  url, body, signal,
+  onReasoning: (text) => setThinking((t) => t + text),   // reasoning_content, not part of the reply
+  onEvent: (ev) => {                                       // any non-'message' frame, e.g. event: card
+    if (ev.event === 'card') renderCard(JSON.parse(ev.data))
+  },
+})) {
+  setReply((r) => r + delta) // only the final answer lands here
+}
+```
+
+`createAIChatStore`/`useAIChat` auto-accumulate `onReasoning` text into the message's
+`reasoning` field (kept separate from `content`) and forward `onEvent` as-is — no extra
+wiring needed at the top-level hook either.
+
 ## API overview
 
 | Export | Entry point | What it does |

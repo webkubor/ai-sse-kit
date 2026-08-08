@@ -30,7 +30,13 @@ export interface StreamSSEOptions {
   headers?: Record<string, string>
   /** Abort signal, wired straight into `fetch`; call `controller.abort()` to cancel. */
   signal?: AbortSignal
-  /** `fetch` credentials mode. Default `'include'` — override for cross-origin/token auth. */
+  /**
+   * `fetch` credentials mode. Left unset by default (native `fetch` default is
+   * `'same-origin'`) — most AI backends use `Authorization`-header token auth, not
+   * cookies, and forcing `'include'` on a cross-origin request without the backend
+   * opting in (`Access-Control-Allow-Credentials` + a non-wildcard `Allow-Origin`)
+   * just fails the CORS preflight. Pass `'include'` explicitly for cookie-auth setups.
+   */
   credentials?: RequestCredentials
 }
 
@@ -45,11 +51,13 @@ export async function extractHTTPError(response: Response): Promise<Error> {
     const body = (await response.json()) as {
       message?: string
       msg?: string
-      error?: { message?: string }
+      error?: string | { message?: string }
       data?: { details?: Array<{ message?: string }> }
     }
-    message =
-      body.data?.details?.[0]?.message ?? body.message ?? body.msg ?? body.error?.message ?? message
+    // `error` shows up as a bare string in a lot of minimal backends (`{ error: "..." }`),
+    // not just as `{ error: { message } }` — check that shape before falling through.
+    const errorMessage = typeof body.error === 'string' ? body.error : body.error?.message
+    message = body.data?.details?.[0]?.message ?? body.message ?? body.msg ?? errorMessage ?? message
   } catch {
     // Non-JSON body: keep the HTTP status text.
   }
@@ -131,7 +139,7 @@ export async function* readSSE(response: Response): AsyncGenerator<SSEEvent, voi
  * ```
  */
 export async function* streamSSE(opts: StreamSSEOptions): AsyncGenerator<SSEEvent, void, unknown> {
-  const { url, body, headers, signal, credentials = 'include' } = opts
+  const { url, body, headers, signal, credentials } = opts
 
   const response = await fetch(url, {
     method: 'POST',

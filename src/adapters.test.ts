@@ -40,6 +40,40 @@ describe('createOpenAIStream', () => {
     for await (const d of createOpenAIStream({ url: '/x', body: {} })) deltas.push(d)
     expect(deltas).toEqual(['ok'])
   })
+
+  it('routes delta.reasoning_content to onReasoning instead of yielding it', async () => {
+    mockFetchOnce(
+      sseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: 'thinking...' } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'answer' } }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ]),
+    )
+    const reasoning: string[] = []
+    const deltas: string[] = []
+    for await (const d of createOpenAIStream({ url: '/x', body: {}, onReasoning: (t) => reasoning.push(t) })) {
+      deltas.push(d)
+    }
+    expect(reasoning).toEqual(['thinking...'])
+    expect(deltas).toEqual(['answer'])
+  })
+
+  it('routes a non-"message" event (an app-injected side-channel frame) to onEvent', async () => {
+    mockFetchOnce(
+      sseResponse([
+        `event: card\ndata: ${JSON.stringify({ title: 'Ticket prices' })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'ok' } }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ]),
+    )
+    const events: Array<{ event: string; data: string }> = []
+    const deltas: string[] = []
+    for await (const d of createOpenAIStream({ url: '/x', body: {}, onEvent: (ev) => events.push(ev) })) {
+      deltas.push(d)
+    }
+    expect(events).toEqual([{ event: 'card', data: JSON.stringify({ title: 'Ticket prices' }), id: undefined }])
+    expect(deltas).toEqual(['ok'])
+  })
 })
 
 describe('createAnthropicStream', () => {
@@ -79,6 +113,38 @@ describe('createAnthropicStream', () => {
         // draining is enough
       }
     }).rejects.toThrow('overloaded')
+  })
+
+  it('routes thinking_delta to onReasoning instead of yielding it', async () => {
+    mockFetchOnce(
+      sseResponse([
+        `event: content_block_delta\ndata: ${JSON.stringify({ delta: { type: 'thinking_delta', thinking: 'hmm' } })}\n\n`,
+        `event: content_block_delta\ndata: ${JSON.stringify({ delta: { type: 'text_delta', text: 'answer' } })}\n\n`,
+        'event: message_stop\ndata: {}\n\n',
+      ]),
+    )
+    const reasoning: string[] = []
+    const deltas: string[] = []
+    for await (const d of createAnthropicStream({ url: '/x', body: {}, onReasoning: (t) => reasoning.push(t) })) {
+      deltas.push(d)
+    }
+    expect(reasoning).toEqual(['hmm'])
+    expect(deltas).toEqual(['answer'])
+  })
+
+  it('routes an unrecognized event name to onEvent, but still swallows known bookkeeping events', async () => {
+    mockFetchOnce(
+      sseResponse([
+        'event: ping\ndata: {}\n\n',
+        `event: custom_tool_call\ndata: ${JSON.stringify({ name: 'lookup' })}\n\n`,
+        'event: message_stop\ndata: {}\n\n',
+      ]),
+    )
+    const events: Array<{ event: string }> = []
+    for await (const _ of createAnthropicStream({ url: '/x', body: {}, onEvent: (ev) => events.push(ev) })) {
+      // draining is enough
+    }
+    expect(events.map((e) => e.event)).toEqual(['custom_tool_call'])
   })
 })
 
@@ -120,5 +186,40 @@ describe('createCustomJSONStream', () => {
         // draining is enough
       }
     }).rejects.toThrow('broke')
+  })
+
+  it('routes a configured reasoning type to onReasoning instead of yielding it', async () => {
+    mockFetchOnce(
+      sseResponse([
+        `data: ${JSON.stringify({ type: 'reasoning', content: 'thinking...' })}\n\n`,
+        `data: ${JSON.stringify({ type: 'delta', content: 'answer' })}\n\n`,
+        `data: ${JSON.stringify({ type: 'done' })}\n\n`,
+      ]),
+    )
+    const reasoning: string[] = []
+    const deltas: string[] = []
+    for await (const d of createCustomJSONStream(
+      { url: '/x', body: {}, onReasoning: (t) => reasoning.push(t) },
+      { reasoningType: 'reasoning', reasoningField: 'content' },
+    )) {
+      deltas.push(d)
+    }
+    expect(reasoning).toEqual(['thinking...'])
+    expect(deltas).toEqual(['answer'])
+  })
+
+  it('routes a non-"message" event to onEvent', async () => {
+    mockFetchOnce(
+      sseResponse([
+        `event: card\ndata: ${JSON.stringify({ title: 'x' })}\n\n`,
+        `data: ${JSON.stringify({ type: 'delta', content: 'a' })}\n\n`,
+        `data: ${JSON.stringify({ type: 'done' })}\n\n`,
+      ]),
+    )
+    const events: Array<{ event: string }> = []
+    for await (const _ of createCustomJSONStream({ url: '/x', body: {}, onEvent: (ev) => events.push(ev) })) {
+      // draining is enough
+    }
+    expect(events.map((e) => e.event)).toEqual(['card'])
   })
 })

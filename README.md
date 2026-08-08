@@ -65,6 +65,27 @@ for await (const delta of createOpenAIStream({ url, body, signal: stream.begin()
 
 完整架构（三层设计、渐进式 API、包结构）见 [`docs/PROPOSAL.md`](./docs/PROPOSAL.md)。
 
+### 推理内容 / 自定义旁路事件
+
+推理模型（deepseek-r1/v4、Anthropic 扩展思考）会把"思考过程"和"最终回答"分开吐；
+应用后端有时还会往标准协议流里混一帧自定义事件（比如查好的结构化数据，不想等模型转述）。
+两种场景都不会污染主 delta 流，走独立回调：
+
+```ts
+for await (const delta of createOpenAIStream({
+  url, body, signal,
+  onReasoning: (text) => setThinking((t) => t + text),   // reasoning_content，不算进正文
+  onEvent: (ev) => {                                       // 非 'message' 的自定义帧，比如 event: card
+    if (ev.event === 'card') renderCard(JSON.parse(ev.data))
+  },
+})) {
+  setReply((r) => r + delta) // 只有最终回答会到这里
+}
+```
+
+`createAIChatStore`/`useAIChat` 会自动把 `onReasoning` 的内容累积进消息的 `reasoning`
+字段（跟 `content` 分开存），并把 `onEvent` 原样转发——顶层封装也不用手动接。
+
 ## API 一览
 
 | 导出 | 入口 | 作用 |
