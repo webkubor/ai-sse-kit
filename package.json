@@ -1,0 +1,32 @@
+{
+  "name": "ai-sse-kit",
+  "version": "0.0.1",
+  "description": "Progressive toolkit for AI streaming: SSE transport, protocol adapters (OpenAI/Anthropic/custom), and stream-safe message patching. Start with useAIChat(), drop to primitives when you need custom protocols.",
+  "license": "MIT",
+  "type": "module",
+  "author": "webkubor",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/webkubor/ai-sse-kit.git"
+  },
+  "keywords": [
+    "ai",
+    "sse",
+    "streaming",
+    "chat",
+    "openai",
+    "anthropic",
+    "react"
+  ],
+  "exports": {
+    ".": "./dist/index.js",
+    "./react": "./dist/react.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false
+}
