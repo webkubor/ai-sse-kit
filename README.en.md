@@ -2,6 +2,7 @@
 
 # ai-sse-kit
 
+[![npm](https://img.shields.io/npm/v/ai-sse-kit)](https://www.npmjs.com/package/ai-sse-kit)
 [![license](https://img.shields.io/github/license/webkubor/ai-sse-kit)](./LICENSE)
 [![CI](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml)
 
@@ -9,9 +10,13 @@ Progressive toolkit for AI streaming: SSE transport, protocol adapters
 (OpenAI / Anthropic / custom JSON), and stream-safe message patching. The core is
 framework-agnostic; React and Vue each get a thin binding on top.
 
-> **Status: pre-alpha, not yet published to npm.** Core implementation (transport /
-> adapters / apply / poll / chat-store) and both the React and Vue bindings are done,
-> with 55 passing tests. The API may still change before a `0.1.0` release.
+```bash
+npm install ai-sse-kit
+```
+
+> **Status: pre-alpha, the API may still change before `1.0`.** Validated by migrating
+> a real consumer (`modelgo-console-web`) onto it — replaced 886 lines across 3 local
+> files, with typecheck/lint/tests/production build/browser end-to-end all passing.
 > Full design doc: [`docs/PROPOSAL.md`](./docs/PROPOSAL.md). Changes: [`CHANGELOG.md`](./CHANGELOG.md).
 
 ## Why

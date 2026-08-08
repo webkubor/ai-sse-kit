@@ -4,7 +4,9 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] - 2026-08-08
+
+First published release. Pre-alpha — the API may still change before `1.0`.
 
 ### Added
 
@@ -20,8 +22,6 @@ All notable changes to this project are documented here. Format follows
 - Vue bindings (`ai-sse-kit/vue`): `useAIChat`, `useStreamingController`.
 - Full test suite (55 tests) covering the core, both protocol adapters, and both
   framework bindings.
+- CI (GitHub Actions): typecheck + test + build on every push/PR to `main`.
 
-### Status
-
-Pre-alpha. Not yet published to npm — building and testing locally, package name and
-API surface may still change before `0.1.0`.
+[0.1.0]: https://github.com/webkubor/ai-sse-kit/releases/tag/v0.1.0

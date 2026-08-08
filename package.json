@@ -1,7 +1,7 @@
 {
   "name": "ai-sse-kit",
-  "version": "0.0.1",
-  "description": "Progressive toolkit for AI streaming: SSE transport, protocol adapters (OpenAI/Anthropic/custom), and stream-safe message patching. Framework-agnostic core with React and Vue bindings. Start with useAIChat(), drop to primitives when you need custom protocols.",
+  "version": "0.1.0",
+  "description": "渐进式 AI 流式对话工具包：SSE 传输、协议适配器（OpenAI/Anthropic/自定义）、流式消息不可变 patch，核心框架无关，React/Vue 双绑定。/ Progressive toolkit for AI streaming: SSE transport, protocol adapters (OpenAI/Anthropic/custom), stream-safe message patching. Framework-agnostic core with React and Vue bindings.",
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@11.1.2",
@@ -20,11 +20,44 @@
     "react",
     "vue"
   ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./react": "./dist/react.js",
-    "./vue": "./dist/vue.js",
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./react": {
+      "import": {
+        "types": "./dist/react.d.ts",
+        "default": "./dist/react.js"
+      },
+      "require": {
+        "types": "./dist/react.d.cts",
+        "default": "./dist/react.cjs"
+      }
+    },
+    "./vue": {
+      "import": {
+        "types": "./dist/vue.d.ts",
+        "default": "./dist/vue.js"
+      },
+      "require": {
+        "types": "./dist/vue.d.cts",
+        "default": "./dist/vue.cjs"
+      }
+    },
     "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "files": [
     "dist",
@@ -37,7 +70,8 @@
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
   "peerDependencies": {
     "react": ">=18",

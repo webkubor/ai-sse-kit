@@ -2,14 +2,19 @@
 
 # ai-sse-kit
 
+[![npm](https://img.shields.io/npm/v/ai-sse-kit)](https://www.npmjs.com/package/ai-sse-kit)
 [![license](https://img.shields.io/github/license/webkubor/ai-sse-kit)](./LICENSE)
 [![CI](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml)
 
 渐进式的 AI 流式对话工具包：SSE 传输、协议适配器（OpenAI / Anthropic / 自定义 JSON）、
 流式消息不可变 patch。核心框架无关，React / Vue 各自提供薄绑定。
 
-> **状态：pre-alpha，尚未发布到 npm。** 已完成核心实现（transport / adapters / apply /
-> poll / chat-store）与 React、Vue 两套绑定，55 例单测全绿；发布前 API 仍可能调整。
+```bash
+npm install ai-sse-kit
+```
+
+> **状态：pre-alpha，API 仍可能在 `1.0` 前调整。** 已在 [`modelgo-console-web`](https://github.com/webkubor)
+> 真实迁移验证过（替换掉原有 3 个本地文件共 886 行，typecheck/lint/单测/生产 build/浏览器端到端全过）。
 > 完整技术方案见 [`docs/PROPOSAL.md`](./docs/PROPOSAL.md)，版本变更见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
 ## 为什么
