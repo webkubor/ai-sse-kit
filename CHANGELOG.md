@@ -4,7 +4,7 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] - 2026-08-08
 
 Fixes and additions from a real integration (hym-admin's assistant chat), not
 speculative — every change below traces back to a friction point actually hit while
@@ -64,4 +64,5 @@ First published release. Pre-alpha — the API may still change before `1.0`.
   framework bindings.
 - CI (GitHub Actions): typecheck + test + build on every push/PR to `main`.
 
+[0.2.0]: https://github.com/webkubor/ai-sse-kit/releases/tag/v0.2.0
 [0.1.0]: https://github.com/webkubor/ai-sse-kit/releases/tag/v0.1.0

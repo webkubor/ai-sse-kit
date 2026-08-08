@@ -1,6 +1,6 @@
 {
   "name": "ai-sse-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "渐进式 AI 流式对话工具包：SSE 传输、协议适配器（OpenAI/Anthropic/自定义）、流式消息不可变 patch，核心框架无关，React/Vue 双绑定。/ Progressive toolkit for AI streaming: SSE transport, protocol adapters (OpenAI/Anthropic/custom), stream-safe message patching. Framework-agnostic core with React and Vue bindings.",
   "license": "MIT",
   "type": "module",
