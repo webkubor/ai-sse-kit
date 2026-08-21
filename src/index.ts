@@ -5,8 +5,3 @@ export { createOpenAIStream, createAnthropicStream, createCustomJSONStream } fro
 export type { AdapterOptions, CustomJSONStreamConfig } from './adapters'
 
 export { patchLastAssistant, patchMessageById } from './apply'
-
-export { pollUntil } from './poll'
-
-export { createAIChatStore } from './chat-store'
-export type { AIChatState, AIChatStore, AIChatStoreOptions, ChatMessage } from './chat-store'

@@ -1,7 +1,7 @@
 {
   "name": "ai-sse-kit",
-  "version": "0.2.0",
-  "description": "渐进式 AI 流式对话工具包：SSE 传输、协议适配器（OpenAI/Anthropic/自定义）、流式消息不可变 patch，核心框架无关，React/Vue 双绑定。/ Progressive toolkit for AI streaming: SSE transport, protocol adapters (OpenAI/Anthropic/custom), stream-safe message patching. Framework-agnostic core with React and Vue bindings.",
+  "version": "0.3.0",
+  "description": "给「后端在自己手里」的项目做 AI 流式接收：SSE 分帧、协议适配（OpenAI/Anthropic/自定义）、消息不可变 patch、取消生命周期。不做 provider 抽象、不做 agent、不绑部署平台。/ AI streaming primitives for apps that own their own backend: SSE framing, protocol adapters, immutable message patching, cancellation lifecycle. No provider abstraction, no agent layer, no platform lock-in.",
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@11.1.2",
@@ -13,10 +13,13 @@
   "keywords": [
     "ai",
     "sse",
+    "server-sent-events",
     "streaming",
-    "chat",
+    "eventsource",
     "openai",
     "anthropic",
+    "deepseek",
+    "abortcontroller",
     "react",
     "vue"
   ],

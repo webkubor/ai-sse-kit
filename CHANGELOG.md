@@ -4,6 +4,52 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-08-21
+
+定位收窄。不是砍功能省事——是先看了竞争格局和唯一真实用户的用法，再决定这个包该停在哪一层。
+
+判断依据两条：
+
+1. **高层封装是巨头的主战场。** Vercel AI SDK 的 `useChat`、TanStack AI 的 `ChatClient`
+   在「一个 hook 出聊天界面」这件事上做得远比这里彻底（provider 抽象、tool calling、
+   持久化、可恢复流）。在这条线上竞争没有胜算。
+2. **作者自己的生产项目就没用那个封装。** `modelgo-console-web` 三条链路（客服对话、
+   模型体验、模型对比）全部用底层原语自己组装：`readSSE` / `streamSSE` /
+   `createOpenAIStream` / `patchLastAssistant` / `patchMessageById` /
+   `useStreamingController`，**一次都没用 `useAIChat`**。真实项目有自己的消息模型、
+   会话管理、错误处理，通用封装装不下。作者都不用的 API，删掉不是损失。
+
+于是本包明确停在「分帧 / 适配 / patch / 取消」这一层，消息模型归应用。
+
+### Removed（breaking）
+
+- `createAIChatStore` 及相关类型（`AIChatState` / `AIChatStore` / `AIChatStoreOptions` /
+  `ChatMessage`）——托管消息状态就必须定义消息长什么样，而那正是通用方案最装不下、
+  且多模态一来就要整体重写的部分。
+- `useAIChat`（`/react` 与 `/vue` 两个绑定都移除）。迁移见 README「快速上手」：
+  `createOpenAIStream` + `patchLastAssistant` + `useStreamingController` 三件套自己拼，
+  比原封装多约 10 行，换来消息模型完全归你。
+- `pollUntil`——异步任务轮询和 SSE 流式接收是两件事，混在一个包里只让定位更模糊。
+  它只有 40 行，需要的话复制进项目比留在这里合适。
+
+两个绑定里的 `useStreamingController` **原样保留**：它是绑定层唯一有存在理由的东西——
+把 `abortAll()` 接到卸载 / scope dispose 上，这是框架无关核心做不到的。
+
+### Changed
+
+- `description` 与 README 重写：从「渐进式 AI 流式对话工具包」改为明确射程——
+  「给**后端在自己手里**的项目做 AI 流式接收」，并**写清不做什么**（provider 抽象 /
+  agent / 消息状态托管 / 平台绑定）。README 新增「先判断要不要用它」对照表，直接指出
+  什么场景该去用 Vercel AI SDK、TanStack AI 或 eventsource-parser。
+  少一个模糊的候选，比多一个抢不到的赛道有用。
+- `keywords` 换成真实搜索词（`server-sent-events` / `eventsource` / `abortcontroller` /
+  `deepseek`），去掉 `chat`——那个词的搜索结果被巨头占满，挂着没有意义。
+
+### 迁移
+
+只用底层原语的（如 modelgo）：**无需改动**，直接升级。
+用过 `useAIChat` 的照 README 拼三件套；用过 `pollUntil` 的把那 40 行复制进项目。
+
 ## [0.2.0] - 2026-08-08
 
 Fixes and additions from a real integration (hym-admin's assistant chat), not

@@ -1,13 +1,12 @@
 /**
- * Mirrors `react.test.ts`: only the Vue-specific wiring is tested here (reactive
- * state updates, cleanup on scope disposal). The actual logic lives in
- * `chat-store.test.ts` / `transport.test.ts` against the framework-agnostic core
- * shared with the React binding.
+ * Mirrors `react.test.ts`: only the Vue-specific wiring is tested here (cleanup on
+ * scope disposal, and that it works outside a component). The controller's own
+ * `begin`/`abort`/`abortAll`/`isActive` contract is covered in `transport.test.ts`
+ * against the framework-agnostic core shared with the React binding.
  */
 import { effectScope } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useAIChat, useStreamingController } from './vue'
-import { mockFetchOnce, sseResponse } from './test-utils'
+import { useStreamingController } from './vue'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -30,66 +29,21 @@ describe('useStreamingController (Vue binding)', () => {
     scope.stop()
     expect(signal.aborted).toBe(true)
   })
-})
 
-describe('useAIChat (Vue binding)', () => {
-  it('updates reactive state with the streamed reply patched in', async () => {
-    mockFetchOnce(
-      sseResponse([
-        `data: ${JSON.stringify({ choices: [{ delta: { content: 'Hi' } }] })}\n\n`,
-        'data: [DONE]\n\n',
-      ]),
-    )
-    const [chat] = withSetup(() => useAIChat({ url: '/api/chat' }))
-
-    await chat.send('hello')
-
-    expect(chat.messages.value.map((m) => [m.role, m.content])).toEqual([
-      ['user', 'hello'],
-      ['assistant', 'Hi'],
-    ])
-    expect(chat.isStreaming.value).toBe(false)
+  it('keyed usage: aborting one key leaves the other in flight until disposal', () => {
+    const [controller, scope] = withSetup(() => useStreamingController<number>())
+    const a = controller.begin(0)
+    const b = controller.begin(1)
+    controller.abort(0)
+    expect(a.aborted).toBe(true)
+    expect(b.aborted).toBe(false)
+    scope.stop()
+    expect(b.aborted).toBe(true)
   })
 
-  it('stop() while still mounted aborts without setting an error', async () => {
-    let streamController!: ReadableStreamDefaultController<Uint8Array>
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        streamController = controller
-      },
-    })
-    globalThis.fetch = (async (_url: unknown, init: { signal?: AbortSignal }) => {
-      init.signal?.addEventListener('abort', () => {
-        streamController.error(new DOMException('Aborted', 'AbortError'))
-      })
-      return new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
-    }) as typeof fetch
-
-    const [chat] = withSetup(() => useAIChat({ url: '/api/chat' }))
-    const sendPromise = chat.send('hi')
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(chat.isStreaming.value).toBe(true)
-
-    chat.stop() // e.g. a "stop" button click, scope is still alive
-    await sendPromise
-
-    expect(chat.error.value).toBeNull()
-    expect(chat.isStreaming.value).toBe(false)
-  })
-
-  it('disposing the scope does not throw, even mid-stream', async () => {
-    const stream = new ReadableStream<Uint8Array>({ start() {} }) // never enqueues
-    globalThis.fetch = (async () =>
-      new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })) as typeof fetch
-
-    const [chat, scope] = withSetup(() => useAIChat({ url: '/api/chat' }))
-    void chat.send('hi')
-    await Promise.resolve()
-
-    // Once disposed, this composable's reactive refs stop tracking the store — the
-    // same as any Vue composable's refs after its component unmounts. Disposal
-    // itself must not throw; it does not promise the refs settle to a final value.
-    expect(() => scope.stop()).not.toThrow()
+  it('works inside a bare effectScope, not just a component — the reason for onScopeDispose', () => {
+    // onUnmounted would silently no-op here; this is what makes the composable
+    // usable outside components and unit-testable without mounting anything.
+    expect(() => withSetup(() => useStreamingController())).not.toThrow()
   })
 })

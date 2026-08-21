@@ -1,13 +1,12 @@
 /**
- * These only test the React-specific wiring (re-render on state change, cleanup on
- * unmount) — the actual send/stream/patch/abort logic is exhaustively covered in
- * `chat-store.test.ts` and `transport.test.ts` against the framework-agnostic core,
- * which both `react.ts` and `vue.ts` share.
+ * These only test the React-specific wiring (stable instance across renders, cleanup
+ * on unmount) — the controller's own `begin`/`abort`/`abortAll`/`isActive` contract is
+ * covered against the framework-agnostic core in `transport.test.ts`, which both
+ * `react.ts` and `vue.ts` share.
  */
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useAIChat, useStreamingController } from './react'
-import { mockFetchOnce, sseResponse } from './test-utils'
+import { useStreamingController } from './react'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -30,33 +29,20 @@ describe('useStreamingController (React binding)', () => {
     rerender()
     expect(result.current).toBe(first)
   })
-})
 
-describe('useAIChat (React binding)', () => {
-  it('re-renders with the streamed reply patched in', async () => {
-    mockFetchOnce(
-      sseResponse([
-        `data: ${JSON.stringify({ choices: [{ delta: { content: 'Hi' } }] })}\n\n`,
-        'data: [DONE]\n\n',
-      ]),
-    )
-    const { result } = renderHook(() => useAIChat({ url: '/api/chat' }))
-
-    await act(async () => {
-      await result.current.send('hello')
+  it('keyed usage: aborting one key leaves the other in flight', () => {
+    const { result, unmount } = renderHook(() => useStreamingController<number>())
+    let a!: AbortSignal
+    let b!: AbortSignal
+    act(() => {
+      a = result.current.begin(0)
+      b = result.current.begin(1)
+      result.current.abort(0)
     })
-
-    expect(result.current.messages.map((m) => [m.role, m.content])).toEqual([
-      ['user', 'hello'],
-      ['assistant', 'Hi'],
-    ])
-    expect(result.current.isStreaming).toBe(false)
-  })
-
-  it('stop() is stable and stops the store on unmount', () => {
-    const { result, unmount } = renderHook(() => useAIChat({ url: '/api/chat' }))
-    const stop = result.current.stop
-    expect(() => unmount()).not.toThrow()
-    expect(typeof stop).toBe('function')
+    expect(a.aborted).toBe(true)
+    expect(b.aborted).toBe(false)
+    // unmount must still catch the one left running — that's the whole point of the binding
+    unmount()
+    expect(b.aborted).toBe(true)
   })
 })

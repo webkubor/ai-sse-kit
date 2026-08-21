@@ -6,109 +6,138 @@
 [![license](https://img.shields.io/github/license/webkubor/ai-sse-kit)](./LICENSE)
 [![CI](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml)
 
-Progressive toolkit for AI streaming: SSE transport, protocol adapters
-(OpenAI / Anthropic / custom JSON), and stream-safe message patching. The core is
-framework-agnostic; React and Vue each get a thin binding on top.
+**AI streaming primitives for apps that own their own backend.** SSE framing, protocol
+adapters, immutable message patching, cancellation lifecycle — four things, framework-agnostic,
+with a thin React and Vue binding each.
+
+**No** provider abstraction, no agent/tool-calling layer, no message-state ownership, no
+platform lock-in.
 
 ```bash
 npm install ai-sse-kit
 ```
 
-> **Status: pre-alpha, the API may still change before `1.0`.** Validated by migrating
-> a real consumer (`modelgo-console-web`) onto it — replaced 886 lines across 3 local
-> files, with typecheck/lint/tests/production build/browser end-to-end all passing.
-> Full design doc: [`docs/PROPOSAL.md`](./docs/PROPOSAL.md). Changes: [`CHANGELOG.md`](./CHANGELOG.md).
+## Is this the right package for you?
 
-## Why
+It covers exactly one segment: **your backend already streams SSE, and the frontend has to
+turn that into UI.**
 
-Most "AI chat" frontends end up writing the same three things by hand: parsing an SSE
-byte stream, managing `AbortController` lifecycles for concurrent/cancelable requests,
-and immutably patching a message list as deltas arrive. `ai-sse-kit` extracts these
-into a small, framework-agnostic core, with a single opinionated hook/composable on
-top for the common case.
+| Your situation | Use |
+|---|---|
+| Frontend talks directly to OpenAI / Anthropic / DeepSeek | [Vercel AI SDK](https://ai-sdk.dev) — provider abstraction and AI Gateway come for free |
+| You need agent loops, tool calling, RAG orchestration | Vercel AI SDK / [TanStack AI](https://tanstack.com/ai) / LangChain.js |
+| You want one `useChat` that renders a whole chat UI | Vercel AI SDK's `useChat` |
+| **Your backend is your own gateway**; the frontend just needs to receive the stream reliably, patch messages, and cancel | **this package** |
+| You only want an SSE parser, nothing else | [eventsource-parser](https://github.com/rexxars/eventsource-parser) |
+
+The distinction: **your backend already decided the protocol and the auth**, so the frontend
+doesn't need another provider abstraction on top — adding one would mean writing a custom
+provider for your own gateway. This package assumes that layer is yours, and only takes away
+the repetitive fetch → frame → patch → cancel work.
+
+> **Status: pre-alpha, API may still shift before `1.0`.** In production use in
+> [`modelgo-console-web`](https://github.com/webkubor) across three flows — support chat,
+> model playground, model comparison — replacing 886 lines across 3 local files.
+> See [`CHANGELOG.md`](./CHANGELOG.md).
 
 ## Quick start
 
-### React
+The typical shape is assembling the primitives yourself — **you keep your own message model**:
 
 ```ts
-import { useAIChat } from 'ai-sse-kit/react'
+import { createOpenAIStream, patchLastAssistant, isAbortError } from 'ai-sse-kit'
+import { useStreamingController } from 'ai-sse-kit/react' // or 'ai-sse-kit/vue'
 
-const { messages, send, stop, isStreaming } = useAIChat({
-  url: '/api/chat',
-  protocol: 'openai', // or 'anthropic', or your own parse function
-})
-```
+const stream = useStreamingController() // abortAll() on unmount
 
-### Vue
-
-```ts
-import { useAIChat } from 'ai-sse-kit/vue'
-
-const { messages, send, stop, isStreaming } = useAIChat({
-  url: '/api/chat',
-  protocol: 'openai',
-})
-// messages / isStreaming / error are ComputedRefs — use directly in a template
-```
-
-### Custom protocol / your own message-state shape
-
-The top-level hook is just the primitives below wired together. If you need a custom
-protocol, or want to manage message state yourself, use the framework-agnostic core
-directly (`ai-sse-kit`, no `/react` or `/vue` suffix):
-
-```ts
-import { createStreamingController, createOpenAIStream, patchLastAssistant } from 'ai-sse-kit'
-
-const stream = createStreamingController()
-for await (const delta of createOpenAIStream({ url, body, signal: stream.begin() })) {
-  setMessages((list) => patchLastAssistant(list, (m) => ({ content: m.content + delta })))
+async function send(input: string) {
+  try {
+    for await (const delta of createOpenAIStream({
+      url: '/api/chat',
+      body: { messages: [...history, { role: 'user', content: input }] },
+      signal: stream.begin(), // calling again aborts the previous request first
+    })) {
+      setMessages((list) => patchLastAssistant(list, (m) => ({ content: m.content + delta })))
+    }
+  } catch (err) {
+    if (!isAbortError(err)) showError(err) // hitting stop isn't an error
+  }
 }
 ```
 
-Full architecture (three-layer design, progressive API, package structure) is in
-[`docs/PROPOSAL.md`](./docs/PROPOSAL.md).
+For a list where each row streams independently (e.g. comparing models side by side), use a
+keyed controller:
 
-### Reasoning content / custom side-channel events
+```ts
+const stream = useStreamingController<number>()
+stream.begin(rowIndex)   // aborts only this row's previous request
+stream.abort(rowIndex)   // stop one row
+stream.abortAll()        // stop everything
+```
 
-Reasoning models (deepseek-r1/v4, Anthropic extended thinking) stream "thinking" and
-"final answer" separately. Backends sometimes also mix a custom event into an otherwise
-standard protocol stream (e.g. structured data you already queried and don't want the
-model to re-describe in prose). Neither pollutes the main delta stream — both go through
-dedicated callbacks:
+### Reasoning content / side-channel events
+
+Reasoning models (deepseek-v4, Anthropic extended thinking) stream "thinking" separately from
+the final answer; backends sometimes also mix a custom frame into an otherwise-standard stream
+(e.g. structured data already fetched, so the UI doesn't wait for the model to describe it).
+Neither pollutes the main delta stream — both go to their own callback:
 
 ```ts
 for await (const delta of createOpenAIStream({
   url, body, signal,
-  onReasoning: (text) => setThinking((t) => t + text),   // reasoning_content, not part of the reply
-  onEvent: (ev) => {                                       // any non-'message' frame, e.g. event: card
+  onReasoning: (text) => setThinking((t) => t + text), // reasoning_content, not part of the reply
+  onEvent: (ev) => {                                    // non-'message' frames, e.g. event: card
     if (ev.event === 'card') renderCard(JSON.parse(ev.data))
   },
 })) {
-  setReply((r) => r + delta) // only the final answer lands here
+  setReply((r) => r + delta) // only the final answer arrives here
 }
 ```
 
-`createAIChatStore`/`useAIChat` auto-accumulate `onReasoning` text into the message's
-`reasoning` field (kept separate from `content`) and forward `onEvent` as-is — no extra
-wiring needed at the top-level hook either.
+### Custom protocols
 
-## API overview
+Rolled your own JSON-over-SSE? Configure the field names instead of writing an adapter:
 
-| Export | Entry point | What it does |
+```ts
+import { createCustomJSONStream } from 'ai-sse-kit'
+
+for await (const delta of createCustomJSONStream(
+  { url, body, signal },
+  { typeField: 'kind', deltaField: 'text', deltaType: 'chunk', doneType: 'eof', errorType: 'err' },
+)) { ... }
+```
+
+Anything richer (multiple delta kinds, tool calls) — write your own `createXxxStream` on top of
+`streamSSE`. An adapter is just an `AsyncGenerator`; there's no framework to inherit from.
+
+## API
+
+| Export | Entry | Purpose |
 |---|---|---|
-| `useAIChat` | `ai-sse-kit/react`, `ai-sse-kit/vue` | Top-level hook/composable: default protocol + message state + abort, batteries included |
-| `useStreamingController` | `ai-sse-kit/react`, `ai-sse-kit/vue` | Same, with framework lifecycle (auto cleanup on unmount/scope dispose) |
-| `createAIChatStore` | `ai-sse-kit` | The framework-agnostic engine behind `useAIChat` — use this to bind your own framework |
-| `createStreamingController` | `ai-sse-kit` | Keyed `AbortController` registry, no framework dependency |
-| `streamSSE` / `readSSE` | `ai-sse-kit` | SSE fetch + framing, protocol-agnostic |
-| `createOpenAIStream` | `ai-sse-kit` | OpenAI `chat.completion.chunk` protocol adapter |
-| `createAnthropicStream` | `ai-sse-kit` | Anthropic Messages API streaming protocol adapter |
-| `createCustomJSONStream` | `ai-sse-kit` | Configurable custom JSON-over-SSE protocol adapter |
-| `patchLastAssistant` / `patchMessageById` | `ai-sse-kit` | Immutable message-list patch helpers |
-| `pollUntil` | `ai-sse-kit` | Poll an async job to a terminal state (image/video generation, etc.) |
-| `isAbortError` / `extractHTTPError` | `ai-sse-kit` | Abort detection / structured HTTP error extraction |
+| `streamSSE` | `ai-sse-kit` | fetch + frame in one call (the common entry point) |
+| `readSSE` | `ai-sse-kit` | framing only, you fetch the response (for URLs that sometimes return JSON) |
+| `createOpenAIStream` | `ai-sse-kit` | OpenAI `chat.completion.chunk` protocol |
+| `createAnthropicStream` | `ai-sse-kit` | Anthropic Messages API streaming protocol |
+| `createCustomJSONStream` | `ai-sse-kit` | custom JSON-over-SSE, configurable field names |
+| `createStreamingController` | `ai-sse-kit` | keyed `AbortController` registry, no framework |
+| `useStreamingController` | `ai-sse-kit/react`, `/vue` | same + automatic cleanup on unmount / scope dispose |
+| `patchLastAssistant` / `patchMessageById` | `ai-sse-kit` | immutable message-list patching |
+| `isAbortError` / `extractHTTPError` | `ai-sse-kit` | cancellation check / HTTP error extraction |
+
+## Design decisions
+
+- **No ky/axios wrapper**: they read the entire body before returning, which defeats streaming.
+  Streaming needs raw `fetch` plus a manual `Response.body` reader.
+- **`credentials` unset by default**: most AI backends use `Authorization` headers; forcing
+  `'include'` fails the CORS preflight unless the backend opted in. Pass `'include'` explicitly
+  for cookie auth.
+- **The controller doesn't own "is streaming" UI state**: apps shape that too differently (one
+  boolean / one per row / shared with a non-streaming path), so baking in one shape makes it
+  unusable for the rest. It owns only the `AbortController` lifecycle.
+- **No `useAIChat`**: the message model (what a message is, how history is kept, how errors
+  surface) is precisely where a generic hook stops fitting real apps — and precisely what the
+  big frameworks already do far more thoroughly. This package stays one layer below: framing,
+  patching, cancellation.
 
 ## License
 

@@ -6,101 +6,128 @@
 [![license](https://img.shields.io/github/license/webkubor/ai-sse-kit)](./LICENSE)
 [![CI](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml)
 
-渐进式的 AI 流式对话工具包：SSE 传输、协议适配器（OpenAI / Anthropic / 自定义 JSON）、
-流式消息不可变 patch。核心框架无关，React / Vue 各自提供薄绑定。
+**给「后端在自己手里」的项目做 AI 流式接收。** SSE 分帧、协议适配、消息不可变 patch、
+取消生命周期——四件事，框架无关，React / Vue 各一个薄绑定。
+
+**不做** provider 抽象、不做 agent / tool calling、不做消息状态托管、不绑部署平台。
 
 ```bash
 npm install ai-sse-kit
 ```
 
-> **状态：pre-alpha，API 仍可能在 `1.0` 前调整。** 已在 [`modelgo-console-web`](https://github.com/webkubor)
-> 真实迁移验证过（替换掉原有 3 个本地文件共 886 行，typecheck/lint/单测/生产 build/浏览器端到端全过）。
-> 完整技术方案见 [`docs/PROPOSAL.md`](./docs/PROPOSAL.md)，版本变更见 [`CHANGELOG.md`](./CHANGELOG.md)。
+## 先判断要不要用它
 
-## 为什么
+这个包只覆盖「**你的后端已经在吐 SSE，前端要把它变成界面**」这一段。
 
-大多数"AI 聊天"前端都要手写同一套东西：解析 SSE 字节流、管理并发/可取消请求的
-`AbortController` 生命周期、把 delta 不可变地 patch 进消息列表。`ai-sse-kit` 把这些
-抽成一个小巧的框架无关核心，上面配一个默认封装的 hook/composable 覆盖常见场景。
+| 你的情况 | 用什么 |
+|---|---|
+| 前端直连 OpenAI / Anthropic / DeepSeek 等厂商 | [Vercel AI SDK](https://ai-sdk.dev)（provider 抽象、AI Gateway 都是现成的） |
+| 要 agent 循环、tool calling、RAG 编排 | Vercel AI SDK / [TanStack AI](https://tanstack.com/ai) / LangChain.js |
+| 想要一个 `useChat` 直接出聊天界面 | Vercel AI SDK 的 `useChat` |
+| **后端是自己的网关**，只需要前端可靠地收流、拼消息、能取消 | **这个包** |
+| 只想要一个 SSE 解析器，别的都不要 | [eventsource-parser](https://github.com/rexxars/eventsource-parser) |
+
+差别在于：**你的后端已经决定了协议和鉴权**，前端不需要再套一层 provider 抽象——套了反而
+要为自家网关写 custom provider。这个包假设那一层归你，只把 fetch → 分帧 → patch → 取消
+这段重复劳动收走。
+
+> **状态：pre-alpha，API 仍可能在 `1.0` 前调整。** 在
+> [`modelgo-console-web`](https://github.com/webkubor) 生产使用中——客服对话、模型体验、
+> 模型对比三条链路，替换掉原有 3 个本地文件共 886 行。
+> 变更记录见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
 ## 快速上手
 
-### React
+典型用法是拿原语自己组装——**你保留自己的消息模型**：
 
 ```ts
-import { useAIChat } from 'ai-sse-kit/react'
+import { createOpenAIStream, patchLastAssistant, isAbortError } from 'ai-sse-kit'
+import { useStreamingController } from 'ai-sse-kit/react' // Vue 用 'ai-sse-kit/vue'
 
-const { messages, send, stop, isStreaming } = useAIChat({
-  url: '/api/chat',
-  protocol: 'openai', // 或 'anthropic'，或传自己的 parse 函数
-})
-```
+const stream = useStreamingController() // 卸载时自动 abortAll
 
-### Vue
-
-```ts
-import { useAIChat } from 'ai-sse-kit/vue'
-
-const { messages, send, stop, isStreaming } = useAIChat({
-  url: '/api/chat',
-  protocol: 'openai',
-})
-// messages / isStreaming / error 是 ComputedRef，模板里直接 {{ messages }} 用
-```
-
-### 自定义协议 / 自己管消息状态
-
-顶层 hook 只是把下面几个 primitive 拼起来——需要自定义协议、或者消息状态想自己管，
-直接用框架无关的核心（`ai-sse-kit`，不带 `/react` `/vue` 后缀）：
-
-```ts
-import { createStreamingController, createOpenAIStream } from 'ai-sse-kit'
-import { patchLastAssistant } from 'ai-sse-kit'
-
-const stream = createStreamingController()
-for await (const delta of createOpenAIStream({ url, body, signal: stream.begin() })) {
-  setMessages((list) => patchLastAssistant(list, (m) => ({ content: m.content + delta })))
+async function send(input: string) {
+  try {
+    for await (const delta of createOpenAIStream({
+      url: '/api/chat',
+      body: { messages: [...history, { role: 'user', content: input }] },
+      signal: stream.begin(), // 再次调用会先中断上一次
+    })) {
+      setMessages((list) => patchLastAssistant(list, (m) => ({ content: m.content + delta })))
+    }
+  } catch (err) {
+    if (!isAbortError(err)) showError(err) // 点了停止不算错误
+  }
 }
 ```
 
-完整架构（三层设计、渐进式 API、包结构）见 [`docs/PROPOSAL.md`](./docs/PROPOSAL.md)。
+列表里每行独立流式（比如多模型对比），用 keyed 控制器：
+
+```ts
+const stream = useStreamingController<number>()
+stream.begin(rowIndex)   // 只中断这一行的上一次请求
+stream.abort(rowIndex)   // 停某一行
+stream.abortAll()        // 全停
+```
 
 ### 推理内容 / 自定义旁路事件
 
-推理模型（deepseek-r1/v4、Anthropic 扩展思考）会把"思考过程"和"最终回答"分开吐；
-应用后端有时还会往标准协议流里混一帧自定义事件（比如查好的结构化数据，不想等模型转述）。
-两种场景都不会污染主 delta 流，走独立回调：
+推理模型（deepseek-v4、Anthropic 扩展思考）把「思考过程」和「最终回答」分开吐；后端有时
+还会往标准协议流里混一帧自定义事件（比如查好的结构化数据，不想等模型转述）。两者都不污染
+主 delta 流，走独立回调：
 
 ```ts
 for await (const delta of createOpenAIStream({
   url, body, signal,
-  onReasoning: (text) => setThinking((t) => t + text),   // reasoning_content，不算进正文
-  onEvent: (ev) => {                                       // 非 'message' 的自定义帧，比如 event: card
+  onReasoning: (text) => setThinking((t) => t + text), // reasoning_content，不算进正文
+  onEvent: (ev) => {                                    // 非 'message' 帧，比如 event: card
     if (ev.event === 'card') renderCard(JSON.parse(ev.data))
   },
 })) {
-  setReply((r) => r + delta) // 只有最终回答会到这里
+  setReply((r) => r + delta) // 只有最终回答到这里
 }
 ```
 
-`createAIChatStore`/`useAIChat` 会自动把 `onReasoning` 的内容累积进消息的 `reasoning`
-字段（跟 `content` 分开存），并把 `onEvent` 原样转发——顶层封装也不用手动接。
+### 自定义协议
 
-## API 一览
+后端是自己拍的 JSON-over-SSE？配字段名就行，不用写适配器：
+
+```ts
+import { createCustomJSONStream } from 'ai-sse-kit'
+
+for await (const delta of createCustomJSONStream(
+  { url, body, signal },
+  { typeField: 'kind', deltaField: 'text', deltaType: 'chunk', doneType: 'eof', errorType: 'err' },
+)) { ... }
+```
+
+再复杂（多种 delta、工具调用）就直接基于 `streamSSE` 写自己的 `createXxxStream`——
+适配器就是个 `AsyncGenerator`，没有框架可继承。
+
+## API
 
 | 导出 | 入口 | 作用 |
 |---|---|---|
-| `useAIChat` | `ai-sse-kit/react`、`ai-sse-kit/vue` | 顶层 hook/composable：默认协议+消息状态+abort 一次包好 |
-| `useStreamingController` | `ai-sse-kit/react`、`ai-sse-kit/vue` | 同名，framework 生命周期版（卸载/scope dispose 自动清理） |
-| `createAIChatStore` | `ai-sse-kit` | `useAIChat` 背后的框架无关引擎，自己接框架时用这个 |
-| `createStreamingController` | `ai-sse-kit` | keyed `AbortController` 注册表，无框架依赖版 |
-| `streamSSE` / `readSSE` | `ai-sse-kit` | SSE 拉流 + 分帧，协议无关 |
-| `createOpenAIStream` | `ai-sse-kit` | OpenAI `chat.completion.chunk` 协议适配器 |
-| `createAnthropicStream` | `ai-sse-kit` | Anthropic Messages API 流式协议适配器 |
-| `createCustomJSONStream` | `ai-sse-kit` | 自定义 JSON-over-SSE 协议适配器（字段名可配置） |
-| `patchLastAssistant` / `patchMessageById` | `ai-sse-kit` | 消息列表不可变 patch 工具 |
-| `pollUntil` | `ai-sse-kit` | 异步任务轮询到终态（图片/视频生成等非流式场景） |
-| `isAbortError` / `extractHTTPError` | `ai-sse-kit` | 错误判定 / HTTP 错误信息提取 |
+| `streamSSE` | `ai-sse-kit` | fetch + 分帧一步到位（最常用入口） |
+| `readSSE` | `ai-sse-kit` | 只分帧，response 自己 fetch（同一 URL 有时返 JSON 时用） |
+| `createOpenAIStream` | `ai-sse-kit` | OpenAI `chat.completion.chunk` 协议 |
+| `createAnthropicStream` | `ai-sse-kit` | Anthropic Messages API 流式协议 |
+| `createCustomJSONStream` | `ai-sse-kit` | 自定义 JSON-over-SSE，字段名可配 |
+| `createStreamingController` | `ai-sse-kit` | keyed `AbortController` 注册表，无框架依赖 |
+| `useStreamingController` | `ai-sse-kit/react`、`/vue` | 同上 + 卸载 / scope dispose 自动清理 |
+| `patchLastAssistant` / `patchMessageById` | `ai-sse-kit` | 消息列表不可变 patch |
+| `isAbortError` / `extractHTTPError` | `ai-sse-kit` | 取消判定 / HTTP 错误信息提取 |
+
+## 设计取舍
+
+- **不用 ky/axios 包一层**：它们读完整个 body 才返回，直接废掉流式。流式只能 `fetch` +
+  手动读 `Response.body`。
+- **`credentials` 默认不设**：多数 AI 后端用 `Authorization` 头，强行 `'include'` 会让跨域
+  预检直接失败。cookie 鉴权的显式传 `'include'`。
+- **控制器不管「是否正在流式」这个 UI 状态**：不同应用形状差太多（一个布尔 / 每行一个 /
+  和非流式路径共用 loading），固定一种反而没法用。它只管 `AbortController` 生命周期。
+- **没有 `useAIChat`**：消息模型（消息长什么样、历史怎么存、错误怎么冒泡）恰恰是通用 hook
+  最装不下的部分，也是巨头做得远比这里彻底的部分。本包停在下一层：分帧、patch、取消。
 
 ## License
 
