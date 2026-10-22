@@ -2,9 +2,15 @@
 
 # ai-sse-kit
 
-[![npm](https://img.shields.io/npm/v/ai-sse-kit)](https://www.npmjs.com/package/ai-sse-kit)
-[![license](https://img.shields.io/github/license/webkubor/ai-sse-kit)](./LICENSE)
-[![CI](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml)
+
+<p align="center">
+  <a href="https://github.com/webkubor/ai-sse-kit/releases"><img src="https://img.shields.io/github/v/release/webkubor/ai-sse-kit?style=for-the-badge&color=coral" alt="版本"></a>
+  <a href="https://github.com/webkubor/ai-sse-kit/releases/latest"><img src="https://img.shields.io/github/downloads/webkubor/ai-sse-kit/total?style=for-the-badge&color=orange" alt="下载"></a>
+  <a href="https://github.com/webkubor/ai-sse-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/webkubor/ai-sse-kit?style=for-the-badge&color=gold" alt="License"></a>
+  <a href="https://github.com/webkubor/ai-sse-kit/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/webkubor/ai-sse-kit/ci.yml?style=for-the-badge&color=4c9a6b" alt="CI"></a>
+  <a href="https://www.npmjs.com/package/ai-sse-kit"><img src="https://img.shields.io/npm/v/ai-sse-kit?style=for-the-badge&color=cb3837" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/ai-sse-kit"><img src="https://img.shields.io/npm/dm/ai-sse-kit?style=for-the-badge&color=cb3837" alt="npm 下载"></a>
+</p>
 
 **给「后端在自己手里」的项目做 AI 流式接收。** SSE 分帧、协议适配、消息不可变 patch、
 取消生命周期——四件事，框架无关，React / Vue 各一个薄绑定。
