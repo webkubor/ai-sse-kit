@@ -1,6 +1,6 @@
 <p align="right"><a href="./README.en.md">English</a> | 中文</p>
 
-# ai-sse-kit
+<h1 align="center">🔌 ai-sse-kit</h1>
 
 
 <p align="center">
