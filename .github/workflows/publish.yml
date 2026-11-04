@@ -1,43 +1,98 @@
-name: Publish to npm
+name: Publish
 
+# 用 npm Trusted Publishing（OIDC）：不存任何 NPM_TOKEN，GitHub Actions 直接向
+# npm 证明「这次发布来自这个仓库的这个 workflow」，短时凭据，自动带 provenance。
+#
+# 发布前 npm 网页上必须已配置 Trusted Publisher：
+#   Publisher = GitHub Actions
+#   Organization/user = kubor          ← ai-sse-kit 归 kubor 账号，不是 webkubor
+#   Repository       = ai-sse-kit
+#   Workflow filename = publish.yml          ← 必须与本文件名一致
+#   Environment      = （留空）
+#
+# 触发：推 v* tag，或手动 workflow_dispatch（发 package.json 当前版本）
+#
+# ⚠️ 为什么用 `push: tags` 而不是 `release: published`：
+# release 事件触发时，workflow 是从**默认分支**取的，不是从 tag 取的；
+# 而 Trusted Publisher 绑的是「仓库 + workflow 文件路径」，从默认分支跑也能匹配，
+# 但实测这条链路更容易踩到 npm 侧 404（2026-11-04 试过 release 触发，E404）。
+# ai-orb / im-notify-kit / dsh-bloom-theme 等已跑通的包统一用 push: tags。
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
   workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # Trusted Publishing 必需：允许向 npm 换取 OIDC 凭据
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-
     steps:
       - uses: actions/checkout@v4
 
-      # 不写 version：action 读取 package.json 的 packageManager（pnpm@11.1.2），
-      # 与本地/CI 同一版本，避免两处口径漂移。
+      # 不写 version：action 读取 package.json 的 packageManager（pnpm@11.1.2）。
       - uses: pnpm/action-setup@v4
 
+      # Trusted Publishing 要求 npm >= 11.5.1（OIDC 支持）
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          # Trusted Publishing 要求 npm >= 11.5.1。node 20/22 自带 npm 10.x，
-          # 会直接走 token 认证路径 → ENEEDAUTH（device-passport 2026-10-17 失败即此）。
-          # 与 ai-orb / im-notify-kit / device-passport 已跑通的发布链路对齐到 24。
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           cache: pnpm
+
+      - name: 确认 npm 版本支持 OIDC
+        run: |
+          npm -v
+          node -e "
+            const v = require('child_process').execSync('npm -v').toString().trim().split('.').map(Number);
+            if (v[0] < 11 || (v[0] === 11 && v[1] < 5)) {
+              console.error('✘ npm ' + v.join('.') + ' 太旧，Trusted Publishing 需要 >= 11.5.1');
+              process.exit(1);
+            }
+          "
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
 
-      # 注意：这里**不能**设 NODE_AUTH_TOKEN。
-      # 一旦该环境变量存在（哪怕是空字符串），npm CLI 就认定要走 token 认证，
-      # 不会去换 OIDC 凭据，Trusted Publishing 形同未配。纯 OIDC，无需任何 secret。
       # build 与三道门禁由 prepublishOnly 统一执行，这里不重复。
-      - name: Publish to npm (Provenance & Trusted Publishing)
+
+      - name: 校验 tag 与 package.json 版本一致
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          echo "npm $(npm --version) / node $(node --version)"
-          npm publish --access public --provenance
+          TAG="${GITHUB_REF#refs/tags/v}"
+          PKG=$(node -p "require('./package.json').version")
+          [ "$TAG" = "$PKG" ] || { echo "::error::tag v$TAG 与 package.json 的 $PKG 不一致"; exit 1; }
+
+      - name: 校验 CHANGELOG 顶部版本与发版一致
+        run: |
+          TOP=$(awk '/^## \[/{gsub(/[\[\]]/,"",$2); print $2; exit}' CHANGELOG.md)
+          PKG=$(node -p "require('./package.json').version")
+          [ "$TOP" = "$PKG" ] || { echo "::error::CHANGELOG 顶部是 $TOP，要发的是 $PKG，先写更新说明"; exit 1; }
+
+      - name: 校验版本未被发布过
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::$NAME@$VERSION 已存在于 npm，先升 package.json 的 version"; exit 1
+          fi
+
+      # 不能设 NODE_AUTH_TOKEN（哪怕空串，npm 也会改走 token 认证、不换 OIDC 凭据）。
+      - name: 发布到 npm
+        run: npm publish --access public --provenance
+
+      - name: 回读确认
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          for i in 1 2 3 4 5 6; do
+            if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+              echo "✓ $NAME@$VERSION 已在 npm 上可查"; exit 0
+            fi
+            echo "… 第 $i 次未查到，30s 后重试"; sleep 30
+          done
+          echo "::error::发布后 3 分钟内仍查不到该版本"; exit 1
