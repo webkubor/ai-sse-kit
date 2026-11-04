@@ -1,6 +1,6 @@
 {
   "name": "ai-sse-kit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "给「后端在自己手里」的项目做 AI 流式接收：SSE 分帧、协议适配（OpenAI/Anthropic/自定义）、消息不可变 patch、取消生命周期。不做 provider 抽象、不做 agent、不绑部署平台。/ AI streaming primitives for apps that own their own backend: SSE framing, protocol adapters, immutable message patching, cancellation lifecycle. No provider abstraction, no agent layer, no platform lock-in.",
   "license": "MIT",
   "type": "module",
@@ -72,7 +72,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
-    "prepare": "tsup",
+    "prepare": "tsup --silent",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build && node scripts/prepublish-gate.mjs && node scripts/readme-gate.mjs && node scripts/version-sync-gate.mjs",

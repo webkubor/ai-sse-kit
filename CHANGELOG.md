@@ -4,6 +4,22 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-11-04
+
+### Fixed
+
+- **git 依赖安装不再静默装坏**：补 `prepare: tsup`。`dist/` 不入库，此前用
+  `github:webkubor/ai-sse-kit` 安装时 npm 显示成功，但包里没有 `dist/`，
+  `require('ai-sse-kit')` 报 `Cannot find module .../dist/index.cjs`。
+  从 npm registry 安装不受影响（tarball 自带 dist）。
+
+### Changed
+
+- 新增 `.github/workflows/publish.yml`（npm Trusted Publishing + provenance）。
+- `llms.txt` 仓库导览按实际目录改写（测试在 `src/*.test.ts`，设计文档为 `docs/PROPOSAL.md`）。
+
+API 无变化。
+
 ## [0.3.0] - 2026-08-21
 
 定位收窄。不是砍功能省事——是先看了竞争格局和唯一真实用户的用法，再决定这个包该停在哪一层。
