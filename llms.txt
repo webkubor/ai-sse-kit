@@ -13,9 +13,9 @@ npm install ai-sse-kit
 ```
 
 ## 仓库导览（改代码去哪）
-- `src/` — 全部源码：SSE 分帧、patch 语义、协议适配器
-- `test/` — 行为契约测试（patch 边界用例在这里，改实现前先读）
-- `docs/` — 协议适配说明
+- `src/` — 全部源码：`transport.ts`（SSE 分帧/取消）、`apply.ts`（patch 语义）、`adapters.ts`（协议适配器）、`react.ts` / `vue.ts`（框架绑定，对应 `ai-sse-kit/react`、`ai-sse-kit/vue` 子路径）
+- `src/*.test.ts` — 行为契约测试，与实现同目录（patch 边界用例在 `apply.test.ts`，改实现前先读）
+- `docs/PROPOSAL.md` — 设计提案与定位取舍
 - `README.md` / `README.en.md` — 双语文档（同步维护）
 
 ## 关键约束

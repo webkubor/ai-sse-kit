@@ -1,0 +1,43 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 不写 version：action 读取 package.json 的 packageManager（pnpm@11.1.2），
+      # 与本地/CI 同一版本，避免两处口径漂移。
+      - uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # Trusted Publishing 要求 npm >= 11.5.1。node 20/22 自带 npm 10.x，
+          # 会直接走 token 认证路径 → ENEEDAUTH（device-passport 2026-10-17 失败即此）。
+          # 与 ai-orb / im-notify-kit / device-passport 已跑通的发布链路对齐到 24。
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      # 注意：这里**不能**设 NODE_AUTH_TOKEN。
+      # 一旦该环境变量存在（哪怕是空字符串），npm CLI 就认定要走 token 认证，
+      # 不会去换 OIDC 凭据，Trusted Publishing 形同未配。纯 OIDC，无需任何 secret。
+      # build 与三道门禁由 prepublishOnly 统一执行，这里不重复。
+      - name: Publish to npm (Provenance & Trusted Publishing)
+        run: |
+          echo "npm $(npm --version) / node $(node --version)"
+          npm publish --access public --provenance
