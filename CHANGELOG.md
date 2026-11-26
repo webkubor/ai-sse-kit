@@ -4,6 +4,24 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-11-26
+
+### Added
+
+- **Anthropic ⇄ OpenAI 请求体/内容块双向转换**：`anthropicToOpenAI` / `openaiToAnthropic`。
+  一个网关要同时对接两家协议时，映射表不用每个项目重写一遍。
+  覆盖 `system` 位置、`tool_use` ⇄ `tool_calls`、`tool_result` ⇄ `role:'tool'`、
+  base64 图片块 ⇄ `image_url`、工具定义 ⇄ function tools。
+- `roundTripCheck`：往返自检，报告哪些字段没能完整映射。
+- `KNOWN_LOSSY`：六类无法无损映射的字段常量
+  （`ANTHROPIC_SYSTEM_OUT_OF_MESSAGES`、`ANTHROPIC_THINKING_BLOCK`、
+  `OPENAI_TOOL_ROLE_MESSAGE`、`ANTHROPIC_MULTIPLE_TOOL_RESULTS`、
+  `OPENAI_IMAGE_DETAIL`、`ANTHROPIC_CACHE_CONTROL`）。
+
+映射不到的地方显式报出来，不静默丢字段。转换只做确定性字段映射，
+不做 provider 抽象、不选模型、不管路由 —— 与本包既有边界一致。
+流式帧的转换仍由 `createOpenAIStream` / `createAnthropicStream` 负责。
+
 ## [0.3.1] - 2026-11-04
 
 ### Fixed
