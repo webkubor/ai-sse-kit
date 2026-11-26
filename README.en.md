@@ -10,8 +10,17 @@
 adapters, immutable message patching, cancellation lifecycle — four things, framework-agnostic,
 with a thin React and Vue binding each.
 
+**New in v0.4**: bidirectional **request-body / content-block conversion between Anthropic
+and OpenAI** (`anthropicToOpenAI` / `openaiToAnthropic`), so a gateway that speaks both
+protocols doesn't have to re-implement the mapping per project.
+
 **No** provider abstraction, no agent/tool-calling layer, no message-state ownership, no
 platform lock-in.
+
+> Protocol **conversion** ≠ provider abstraction: there's no "unify every vendor behind one
+> interface", no model selection, no routing. Just deterministic field mapping between two
+> JSON shapes — and anything that can't map is reported explicitly (`KNOWN_LOSSY`) rather
+> than silently dropped.
 
 ```bash
 npm install ai-sse-kit
@@ -110,6 +119,46 @@ for await (const delta of createCustomJSONStream(
 Anything richer (multiple delta kinds, tool calls) — write your own `createXxxStream` on top of
 `streamSSE`. An adapter is just an `AsyncGenerator`; there's no framework to inherit from.
 
+### Cross-protocol conversion (Anthropic ⇄ OpenAI)
+
+When the backend talks to both Anthropic and OpenAI, the **request-body** and **content-block**
+mapping shouldn't be rewritten per project:
+
+```ts
+import { anthropicToOpenAI, openaiToAnthropic, KNOWN_LOSSY } from 'ai-sse-kit'
+
+// Anthropic request → OpenAI request
+const { body, lossy } = anthropicToOpenAI(anthropicReq)
+if (lossy.length) console.warn('fields that did not map cleanly', lossy)
+
+// OpenAI request → Anthropic request (the way back)
+const back = openaiToAnthropic(openaiReq)
+```
+
+Covered mappings: `system` placement, `tool_use` ⇄ `tool_calls`, `tool_result` ⇄
+`role: 'tool'`, base64 image blocks ⇄ `image_url`, tool definitions ⇄ function tools.
+
+**Anything that can't map losslessly is reported**, never silently dropped:
+
+| Constant | Meaning |
+|---|---|
+| `ANTHROPIC_SYSTEM_OUT_OF_MESSAGES` | the system prompt lives in a different place in each protocol |
+| `ANTHROPIC_THINKING_BLOCK` | Anthropic thinking blocks have no counterpart |
+| `OPENAI_TOOL_ROLE_MESSAGE` | OpenAI's tool-role message shape differs |
+| `ANTHROPIC_MULTIPLE_TOOL_RESULTS` | several tool results in one turn split into several messages |
+| `OPENAI_IMAGE_DETAIL` | the image `detail` parameter has no counterpart |
+| `ANTHROPIC_CACHE_CONTROL` | Anthropic's cache markers have no counterpart |
+
+Check what survives a round trip:
+
+```ts
+import { roundTripCheck } from 'ai-sse-kit'
+const { ok, lossy } = roundTripCheck(anthropicReq)
+```
+
+> Streaming **frames** are not converted here — SSE event names and delta shapes belong to
+> `createOpenAIStream` / `createAnthropicStream`. This file only handles JSON request bodies.
+
 ## API
 
 | Export | Entry | Purpose |
@@ -119,10 +168,13 @@ Anything richer (multiple delta kinds, tool calls) — write your own `createXxx
 | `createOpenAIStream` | `ai-sse-kit` | OpenAI `chat.completion.chunk` protocol |
 | `createAnthropicStream` | `ai-sse-kit` | Anthropic Messages API streaming protocol |
 | `createCustomJSONStream` | `ai-sse-kit` | custom JSON-over-SSE, configurable field names |
-| `createStreamingController` | `ai-sse-kit` | keyed `AbortController` registry, no framework |
-| `useStreamingController` | `ai-sse-kit/react`, `/vue` | same + automatic cleanup on unmount / scope dispose |
-| `patchLastAssistant` / `patchMessageById` | `ai-sse-kit` | immutable message-list patching |
-| `isAbortError` / `extractHTTPError` | `ai-sse-kit` | cancellation check / HTTP error extraction |
+| `createStreamingController` | `ai-sse-kit` | keyed `AbortController` registry, no framework dependency |
+| `useStreamingController` | `ai-sse-kit/react`, `/vue` | same, plus automatic cleanup on unmount / scope dispose |
+| `anthropicToOpenAI` / `openaiToAnthropic` | `ai-sse-kit` | Anthropic ⇄ OpenAI request-body / content-block conversion |
+| `roundTripCheck` | `ai-sse-kit` | round-trip self-check: reports fields that did not map cleanly |
+| `KNOWN_LOSSY` | `ai-sse-kit` | the list of fields that cannot map losslessly (constant table) |
+| `patchLastAssistant` / `patchMessageById` | `ai-sse-kit` | immutable patching for message lists |
+| `isAbortError` / `extractHTTPError` | `ai-sse-kit` | abort detection / HTTP error extraction |
 
 ## Design decisions
 
@@ -138,6 +190,12 @@ Anything richer (multiple delta kinds, tool calls) — write your own `createXxx
   surface) is precisely where a generic hook stops fitting real apps — and precisely what the
   big frameworks already do far more thoroughly. This package stays one layer below: framing,
   patching, cancellation.
+- **Protocol conversion is deterministic mapping, not a "unified interface"**: the conversion
+  layer exists so a gateway speaking two protocols doesn't rewrite the mapping table per
+  project — not to hide every vendor behind one shape. So there's no provider registry, no
+  capability probing, no selection strategy; anything that can't map is reported and left to
+  the caller. Once those two boundaries blur, callers can no longer tell what the layer
+  actually did for them.
 
 ## License
 

@@ -15,7 +15,14 @@
 **给「后端在自己手里」的项目做 AI 流式接收。** SSE 分帧、协议适配、消息不可变 patch、
 取消生命周期——四件事，框架无关，React / Vue 各一个薄绑定。
 
+**v0.4 起新增**：Anthropic ⇄ OpenAI 的**请求体/内容块双向转换**（`anthropicToOpenAI` /
+`openaiToAnthropic`），让「一个网关同时对接两家协议」不用每个项目各写一遍。
+
 **不做** provider 抽象、不做 agent / tool calling、不做消息状态托管、不绑部署平台。
+
+> 协议**转换** ≠ provider 抽象：这里不做「统一成一种接口去屏蔽各家」、不选模型、不管路由，
+> 只在两种协议的 JSON 结构之间做**确定性的字段映射**，且映射不到的地方会显式报出来
+> （`KNOWN_LOSSY`），不会悄悄丢字段。
 
 ```bash
 npm install ai-sse-kit
@@ -110,6 +117,45 @@ for await (const delta of createCustomJSONStream(
 再复杂（多种 delta、工具调用）就直接基于 `streamSSE` 写自己的 `createXxxStream`——
 适配器就是个 `AsyncGenerator`，没有框架可继承。
 
+### 跨协议转换（Anthropic ⇄ OpenAI）
+
+后端要同时对接 Anthropic 和 OpenAI 时，**请求体和内容块**的映射不用每家各写一遍：
+
+```ts
+import { anthropicToOpenAI, openaiToAnthropic, KNOWN_LOSSY } from 'ai-sse-kit'
+
+// Anthropic 请求 → OpenAI 请求
+const { body, lossy } = anthropicToOpenAI(anthropicReq)
+if (lossy.length) console.warn('有字段没能完整映射', lossy) // 显式报出，不静默丢
+
+// OpenAI 请求 → Anthropic 请求（回程）
+const back = openaiToAnthropic(openaiReq)
+```
+
+覆盖的映射：`system` 位置、`tool_use` ⇄ `tool_calls`、`tool_result` ⇄ `role: 'tool'`、
+base64 图片块 ⇄ `image_url`、工具定义 ⇄ function tools。
+
+**映射不到的地方会显式报出来**，不静默丢字段：
+
+| 常量 | 含义 |
+|---|---|
+| `ANTHROPIC_SYSTEM_OUT_OF_MESSAGES` | system 提示词在两边的位置不同 |
+| `ANTHROPIC_THINKING_BLOCK` | Anthropic 的 thinking 块没有对应物 |
+| `OPENAI_TOOL_ROLE_MESSAGE` | OpenAI 的 tool 角色消息结构不同 |
+| `ANTHROPIC_MULTIPLE_TOOL_RESULTS` | 一轮多个工具结果要拆成多条消息 |
+| `OPENAI_IMAGE_DETAIL` | 图片 detail 参数没有对应物 |
+| `ANTHROPIC_CACHE_CONTROL` | Anthropic 的缓存标记没有对应物 |
+
+自检往返是否丢东西：
+
+```ts
+import { roundTripCheck } from 'ai-sse-kit'
+const { ok, lossy } = roundTripCheck(anthropicReq)
+```
+
+> 流式**帧**的转换不在这里 —— SSE 事件名和 delta 形状由 `createOpenAIStream` /
+> `createAnthropicStream` 各自负责。这个文件只管 JSON 请求体。
+
 ## API
 
 | 导出 | 入口 | 作用 |
@@ -121,6 +167,9 @@ for await (const delta of createCustomJSONStream(
 | `createCustomJSONStream` | `ai-sse-kit` | 自定义 JSON-over-SSE，字段名可配 |
 | `createStreamingController` | `ai-sse-kit` | keyed `AbortController` 注册表，无框架依赖 |
 | `useStreamingController` | `ai-sse-kit/react`、`/vue` | 同上 + 卸载 / scope dispose 自动清理 |
+| `anthropicToOpenAI` / `openaiToAnthropic` | `ai-sse-kit` | Anthropic ⇄ OpenAI 请求体/内容块双向转换 |
+| `roundTripCheck` | `ai-sse-kit` | 往返自检：报告哪些字段没能完整映射 |
+| `KNOWN_LOSSY` | `ai-sse-kit` | 无法无损映射的字段清单（常量表） |
 | `patchLastAssistant` / `patchMessageById` | `ai-sse-kit` | 消息列表不可变 patch |
 | `isAbortError` / `extractHTTPError` | `ai-sse-kit` | 取消判定 / HTTP 错误信息提取 |
 
@@ -134,6 +183,10 @@ for await (const delta of createCustomJSONStream(
   和非流式路径共用 loading），固定一种反而没法用。它只管 `AbortController` 生命周期。
 - **没有 `useAIChat`**：消息模型（消息长什么样、历史怎么存、错误怎么冒泡）恰恰是通用 hook
   最装不下的部分，也是巨头做得远比这里彻底的部分。本包停在下一层：分帧、patch、取消。
+- **协议转换只做确定性映射，不做「统一接口」**：转换层的存在意义是「同一个网关要接两家协议时
+  不用每个项目重写一遍映射表」，不是「用一种接口屏蔽所有厂商」。所以它没有 provider 注册表、
+  没有能力探测、没有选型策略；映射不成的地方一律报出来交给调用方决定，而不是悄悄丢字段。
+  两种边界一旦混起来，调用方就再也说不清「这层到底替我做了什么」。
 
 ## License
 
